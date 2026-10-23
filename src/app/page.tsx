@@ -163,7 +163,7 @@ export default function HomePage() {
     <main className="radio-app radio-page radio-home">
       <audio ref={audioRef} preload="none" onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onError={() => { setPlaying(false); setError("La transmisión no está disponible ahora. Prueba otra estación."); }} />
       <aside className="sidebar">
-        <Link className="brand" href="/" aria-label="Onda, inicio"><span className="brand-mark"><Waves size={21} strokeWidth={2.5} /></span><span>onda<span className="brand-dot">.</span></span></Link>
+        <Link className="brand" href="/" aria-label="Gugli, inicio"><span className="brand-mark"><Waves size={21} strokeWidth={2.5} /></span><span>Gugli<span className="brand-dot">.</span></span></Link>
         <div className="side-label">EXPLORA</div>
         <nav className="main-nav" aria-label="Navegación principal">
           <Link className="nav-item active" href="/"><Home size={19} /><span>Inicio</span></Link>
@@ -175,7 +175,7 @@ export default function HomePage() {
         <div className="library-heading"><span className="side-label">DESCUBRIR</span></div>
         <Link className="library-card" href="/estaciones"><span className="library-icon"><MapPin size={17} /></span><span><b>Mi ciudad</b><small>CDMX· Monterrey· GDL</small></span></Link>
         <div className="oss-card"><span className="oss-symbol">✳</span><b>La radio es de todos.</b><p>Explora señales de todo el mundo. Gratis, sin barreras.</p><span className="oss-label"><Waves size={12} /> CÓDIGO ABIERTO</span></div>
-        <div className="sidebar-bottom"><span className="oss-avatar"><Waves size={15}/></span><span className="profile-text"><b>Onda Radio</b><small>Proyecto comunitario</small></span></div>
+        <div className="sidebar-bottom"><span className="oss-avatar"><Waves size={15}/></span><span className="profile-text"><b>Gugli</b><p>Haz de la radio, tu radio</p></span></div>
       </aside>
 
       <section className="main-column home-main" id="inicio">
@@ -193,7 +193,7 @@ export default function HomePage() {
           </section>
 
           <section className="home-city-banner"><span className="home-city-icon"><MapPin size={20}/></span><div><b>¿Buscas las estaciones de tu ciudad?</b><small>Explora la radio local de Ciudad de México, Monterrey y Guadalajara.</small></div><Link href="/estaciones">Explorar estaciones locales <ArrowRight size={14}/></Link></section>
-          <footer className="footer-note"><span>Onda conecta con transmisiones públicas de todo el mundo.</span><span>Hecho con ♥ y código abierto.</span></footer>
+          <footer className="footer-note"><span>Gugli conecta con transmisiones públicas de todo el mundo.</span><span>Hecho con ♥ y código abierto.</span></footer>
         </div>
       </section>
 
@@ -207,7 +207,7 @@ export default function HomePage() {
         <div className="player-info"><span><Check size={14}/> Reproducción gratuita</span><p>El audio se transmite directamente desde cada estación.</p></div>
         <div className="player-source"><span className="source-icon"><Radio size={16}/></span><span><b>Fuente abierta</b><small>Radio Browser · comunidad</small></span><a href="https://www.radio-browser.info/" aria-label="Catálogo Radio Browser" target="_blank" rel="noreferrer"><ArrowRight size={15}/></a></div>
       </aside>
-      <div className="mobile-player"><span className="mobile-cover"><Waves size={18}/></span><span className="mobile-track-copy"><b>{selected?.name || "Onda Radio"}</b><small>{playing ? "En vivo · " : "Gratis · "}{selected?.country || "elige una estación"}</small></span><label className="mobile-volume" aria-label="Volumen"><Volume2 size={14}/><input aria-label="Volumen" type="range" min="0" max="1" step="0.01" value={volume} onChange={(event) => setVolume(Number(event.target.value))}/></label><button className="mobile-skip" onClick={() => moveStation(-1)} disabled={!selected || stations.length < 2} aria-label="Estación anterior"><SkipBack size={15}/></button><button onClick={() => void togglePlay()} disabled={!selected} aria-label={playing ? "Pausar" : "Reproducir"}>{playing ? <Pause size={19} fill="currentColor"/> : <Play size={19} fill="currentColor"/>}</button><button className="mobile-skip" onClick={() => moveStation(1)} disabled={!selected || stations.length < 2} aria-label="Siguiente estación"><SkipForward size={15}/></button></div>
+      <div className="mobile-player"><span className="mobile-cover"><Waves size={18}/></span><span className="mobile-track-copy"><b>{selected?.name || "Gugli"}</b><small>{playing ? "En vivo · " : "Gratis · "}{selected?.country || "elige una estación"}</small></span><label className="mobile-volume" aria-label="Volumen"><Volume2 size={14}/><input aria-label="Volumen" type="range" min="0" max="1" step="0.01" value={volume} onChange={(event) => setVolume(Number(event.target.value))}/></label><button className="mobile-skip" onClick={() => moveStation(-1)} disabled={!selected || stations.length < 2} aria-label="Estación anterior"><SkipBack size={15}/></button><button onClick={() => void togglePlay()} disabled={!selected} aria-label={playing ? "Pausar" : "Reproducir"}>{playing ? <Pause size={19} fill="currentColor"/> : <Play size={19} fill="currentColor"/>}</button><button className="mobile-skip" onClick={() => moveStation(1)} disabled={!selected || stations.length < 2} aria-label="Siguiente estación"><SkipForward size={15}/></button></div>
     </main>
   );
 }
