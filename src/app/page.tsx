@@ -1,10 +1,10 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import Link from "next/link";
 import {
-  ArrowRight, AudioLines, Compass, Globe2, Headphones, Home, LoaderCircle,
-  MapPin, Pause, Play, Radio, Search, Waves,
+  ArrowRight, AudioLines, Check, Compass, Globe2, Headphones, Home, LoaderCircle,
+  MapPin, Pause, Play, Radio, Search, SkipBack, SkipForward, Volume2, VolumeX, Waves,
 } from "lucide-react";
 
 type Station = {
@@ -22,12 +22,12 @@ type Station = {
 const apiRoot = "https://de1.api.radio-browser.info/json/stations";
 const accents = ["#bda2ff", "#caff64", "#f6aa89", "#84d4cc", "#ffcf7a", "#f28faf"];
 const countries = [
-  { label: "México", api: "Mexico", flag: "🇲🇽", note: "De aquí cerca" },
-  { label: "Argentina", api: "Argentina", flag: "🇦🇷", note: "Nuevas voces" },
-  { label: "Colombia", api: "Colombia", flag: "🇨🇴", note: "Ritmos y noticias" },
-  { label: "España", api: "Spain", flag: "🇪🇸", note: "Al otro lado" },
-  { label: "Brasil", api: "Brazil", flag: "🇧🇷", note: "Siente el ritmo" },
-  { label: "Japón", api: "Japan", flag: "🇯🇵", note: "Una señal distinta" },
+  { label: "México", api: "Mexico", flag: "\u{1F1F2}\u{1F1FD}", note: "De aquí cerca" },
+  { label: "Argentina", api: "Argentina", flag: "\u{1F1E6}\u{1F1F7}", note: "Nuevas voces" },
+  { label: "Colombia", api: "Colombia", flag: "\u{1F1E8}\u{1F1F4}", note: "Ritmos y noticias" },
+  { label: "España", api: "Spain", flag: "\u{1F1EA}\u{1F1F8}", note: "Al otro lado" },
+  { label: "Brasil", api: "Brazil", flag: "\u{1F1E7}\u{1F1F7}", note: "Siente el ritmo" },
+  { label: "Japón", api: "Japan", flag: "\u{1F1EF}\u{1F1F5}", note: "Una señal distinta" },
 ];
 
 export default function HomePage() {
@@ -36,10 +36,13 @@ export default function HomePage() {
   const [selectedCountry, setSelectedCountry] = useState<(typeof countries)[number] | null>(null);
   const [selected, setSelected] = useState<Station | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [volume, setVolume] = useState(0.72);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [searchedTerm, setSearchedTerm] = useState("");
   const [error, setError] = useState("");
+
+  useEffect(() => { if (audioRef.current) audioRef.current.volume = volume; }, [volume]);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,6 +140,21 @@ export default function HomePage() {
     }
   };
 
+  const togglePlay = async () => {
+    const audio = audioRef.current;
+    if (!audio || !selected) return;
+    if (playing) { audio.pause(); return; }
+    try { await audio.play(); setError(""); }
+    catch { setError("Esta estación no está disponible ahora. Prueba otra emisora."); }
+  };
+
+  const moveStation = (direction: -1 | 1) => {
+    if (stations.length < 2) return;
+    const currentIndex = stations.findIndex((station) => station.stationuuid === selected?.stationuuid);
+    const nextIndex = currentIndex < 0 ? (direction === 1 ? 0 : stations.length - 1) : (currentIndex + direction + stations.length) % stations.length;
+    void playStation(stations[nextIndex]);
+  };
+
   const title = searchedTerm && !selectedCountry
     ? `Resultados para “${searchedTerm}”`
     : selectedCountry ? `Sonidos de ${selectedCountry.label}` : "Lo que más se escucha";
@@ -155,7 +173,7 @@ export default function HomePage() {
         </nav>
         <div className="side-divider" />
         <div className="library-heading"><span className="side-label">DESCUBRIR</span></div>
-        <Link className="library-card" href="/estaciones"><span className="library-icon"><MapPin size={17} /></span><span><b>Mi ciudad</b><small>CDMX · Monterrey · GDL</small></span></Link>
+        <Link className="library-card" href="/estaciones"><span className="library-icon"><MapPin size={17} /></span><span><b>Mi ciudad</b><small>CDMX· Monterrey· GDL</small></span></Link>
         <div className="oss-card"><span className="oss-symbol">✳</span><b>La radio es de todos.</b><p>Explora señales de todo el mundo. Gratis, sin barreras.</p><span className="oss-label"><Waves size={12} /> CÓDIGO ABIERTO</span></div>
         <div className="sidebar-bottom"><span className="oss-avatar"><Waves size={15}/></span><span className="profile-text"><b>Onda Radio</b><small>Proyecto comunitario</small></span></div>
       </aside>
@@ -179,7 +197,17 @@ export default function HomePage() {
         </div>
       </section>
 
-      {selected && <div className="home-player-bar"><span className="home-player-icon"><Waves size={18}/></span><span className="home-player-track"><b>{selected.name}</b><small>{selected.country || "Radio global"} · {playing ? "Transmitiendo en vivo" : "Pausada"}</small></span><span className={`home-player-live ${playing ? "active" : ""}`}>{playing ? "EN VIVO" : "PAUSADA"}</span><button onClick={() => void playStation(selected)} aria-label={playing ? "Pausar" : "Reproducir"}>{playing ? <Pause size={19} fill="currentColor"/> : <Play size={19} fill="currentColor"/>}</button></div>}
+      <aside className="now-playing radio-player" id="reproductor">
+        <div className="now-header"><span><i className={`equalizer ${playing ? "is-playing" : ""}`}><b/><b/><b/><b/></i> REPRODUCTOR</span><span className="player-live-tag"><i/> EN VIVO</span></div>
+        <div className="player-art"><span className="player-art-orbit player-orbit-one"/><span className="player-art-orbit player-orbit-two"/><Waves size={52}/><span className="player-art-signal">◖)))</span><span className="player-art-caption">UNA RADIO<br/>MUCHOS MUNDOS</span></div>
+        <div className="now-track"><div><span className="eyebrow">{selected?.country?.toUpperCase() || "AÚN SIN SINTONIZAR"}</span><h3>{selected?.name || "Elige una estación"}</h3><p>{selected ? (selected.tags?.split(",").slice(0, 2).join(" · ") || "Transmisión en vivo") : "Tu próximo descubrimiento te espera."}</p></div></div>
+        <div className="player-status"><span className={`player-status-dot ${playing ? "active" : ""}`}/><span>{playing ? "Estás escuchando en vivo" : selected ? "Transmisión pausada" : "Selecciona una frecuencia"}</span></div>
+        <div className="radio-controls"><button className="station-skip" onClick={() => moveStation(-1)} disabled={!selected || stations.length < 2} aria-label="Estación anterior"><SkipBack size={18}/></button><button className="radio-main-control" onClick={() => void togglePlay()} disabled={!selected} aria-label={playing ? "Pausar estación" : "Reproducir estación"}>{playing ? <Pause size={21} fill="currentColor"/> : <Play size={21} fill="currentColor"/>}</button><button className="station-skip" onClick={() => moveStation(1)} disabled={!selected || stations.length < 2} aria-label="Siguiente estación"><SkipForward size={18}/></button></div>
+        <div className="volume-control"><button aria-label={volume === 0 ? "Activar sonido" : "Silenciar"} onClick={() => setVolume(volume === 0 ? 0.72 : 0)}>{volume === 0 ? <VolumeX size={17}/> : <Volume2 size={17}/>}</button><input aria-label="Volumen" type="range" min="0" max="1" step="0.01" value={volume} style={{ "--volume-level": `${volume * 100}%` } as CSSProperties} onChange={(event) => setVolume(Number(event.target.value))}/><span>{Math.round(volume * 100)}%</span></div>
+        <div className="player-info"><span><Check size={14}/> Reproducción gratuita</span><p>El audio se transmite directamente desde cada estación.</p></div>
+        <div className="player-source"><span className="source-icon"><Radio size={16}/></span><span><b>Fuente abierta</b><small>Radio Browser · comunidad</small></span><a href="https://www.radio-browser.info/" aria-label="Catálogo Radio Browser" target="_blank" rel="noreferrer"><ArrowRight size={15}/></a></div>
+      </aside>
+      <div className="mobile-player"><span className="mobile-cover"><Waves size={18}/></span><span className="mobile-track-copy"><b>{selected?.name || "Onda Radio"}</b><small>{playing ? "En vivo · " : "Gratis · "}{selected?.country || "elige una estación"}</small></span><label className="mobile-volume" aria-label="Volumen"><Volume2 size={14}/><input aria-label="Volumen" type="range" min="0" max="1" step="0.01" value={volume} onChange={(event) => setVolume(Number(event.target.value))}/></label><button className="mobile-skip" onClick={() => moveStation(-1)} disabled={!selected || stations.length < 2} aria-label="Estación anterior"><SkipBack size={15}/></button><button onClick={() => void togglePlay()} disabled={!selected} aria-label={playing ? "Pausar" : "Reproducir"}>{playing ? <Pause size={19} fill="currentColor"/> : <Play size={19} fill="currentColor"/>}</button><button className="mobile-skip" onClick={() => moveStation(1)} disabled={!selected || stations.length < 2} aria-label="Siguiente estación"><SkipForward size={15}/></button></div>
     </main>
   );
 }

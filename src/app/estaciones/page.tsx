@@ -19,12 +19,32 @@ type Station = {
   bitrate: number;
   codec: string;
   votes: number;
-  city: City;
+  city: string;
+  country?: string;
+  state?: string;
+  recommendationType?: "local" | "nearby";
+  recommendationCountryCode?: string;
 };
+
+type UserLocation = { countryName: string; countryCode: string; region: string; city: string };
 
 const cities: City[] = ["Ciudad de México", "Monterrey", "Guadalajara"];
 const radioApi = "https://de1.api.radio-browser.info/json/stations/search";
 const pageSize = 6;
+const nearbyCountryCodes: Record<string, string[]> = {
+  MX: ["US", "GT", "BZ"], US: ["CA", "MX"], CA: ["US"], GT: ["MX", "BZ", "SV", "HN"],
+  AR: ["CL", "BO", "PY", "UY", "BR"], CL: ["AR", "BO", "PE"], CO: ["VE", "EC", "PE", "BR"],
+  ES: ["PT", "FR", "AD"], PT: ["ES"], FR: ["ES", "BE", "DE", "IT", "CH"],
+  DE: ["DK", "PL", "CZ", "AT", "CH", "FR", "LU", "BE", "NL"], IT: ["FR", "CH", "AT", "SI"],
+  NL: ["BE", "DE"], BE: ["FR", "DE", "LU", "NL"], CH: ["FR", "DE", "AT", "IT"],
+  AT: ["DE", "CZ", "SK", "HU", "SI", "IT", "CH"], PL: ["DE", "CZ", "SK", "UA", "BY", "LT"],
+  CZ: ["DE", "PL", "SK", "AT"], GB: ["IE", "FR"], IE: ["GB"],
+  BR: ["AR", "BO", "CO", "PY", "UY", "VE"], JP: ["KR", "CN"], KR: ["KP", "JP", "CN"],
+  IN: ["PK", "CN", "NP", "BT", "BD", "MM"], CN: ["IN", "RU", "MN", "KP", "KR", "VN", "LA", "MM", "PK"],
+  TH: ["MM", "LA", "KH", "MY"], VN: ["CN", "LA", "KH"], ID: ["MY", "PG", "TL"],
+  ZA: ["NA", "BW", "ZW", "MZ", "LS", "SZ"], EG: ["LY", "SD", "IL"], KE: ["ET", "SO", "TZ", "UG"],
+  NG: ["NE", "TD", "CM", "BJ"], MA: ["DZ", "MR", "ES"],
+};
 const accents = ["#bda2ff", "#caff64", "#f6aa89", "#84d4cc", "#ffcf7a", "#f28faf"];
 const genres = [
   { label: "Todos", terms: [] },
@@ -59,6 +79,10 @@ export default function HomePage() {
   const [favorites, setFavorites] = useState<string[]>([]);
   const [favoritesLoaded, setFavoritesLoaded] = useState(false);
   const [page, setPage] = useState(1);
+  const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
+  const [locationStatus, setLocationStatus] = useState<"idle" | "detecting" | "ready" | "error">("idle");
+  const [locationError, setLocationError] = useState("");
+  const [recommendations, setRecommendations] = useState<Station[]>([]);
 
   useEffect(() => {
     try {
@@ -72,6 +96,81 @@ export default function HomePage() {
     }
     setFavoritesLoaded(true);
   }, []);
+
+  const detectLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationError("Este navegador no permite detectar la ubicación. Puedes seguir explorando las ciudades.");
+      setLocationStatus("error");
+      return;
+    }
+    setLocationStatus("detecting");
+    setLocationError("");
+    navigator.geolocation.getCurrentPosition(async ({ coords }) => {
+      try {
+        const params = new URLSearchParams({ latitude: String(coords.latitude), longitude: String(coords.longitude), localityLanguage: "es" });
+        const response = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?${params}`);
+        if (!response.ok) throw new Error();
+        const place = await response.json() as { countryName?: string; countryCode?: string; principalSubdivision?: string; city?: string; locality?: string };
+        if (!place.countryName || !place.countryCode) throw new Error();
+        const location = { countryName: place.countryName, countryCode: place.countryCode.toUpperCase(), region: place.principalSubdivision || "", city: place.city || place.locality || "" };
+        setUserLocation(location);
+        let nearbyCodes = nearbyCountryCodes[location.countryCode] || [];
+        try {
+          const countryResponse = await fetch(`https://restcountries.com/v3.1/alpha/${location.countryCode}?fields=borders`);
+          if (countryResponse.ok) {
+            const countryResult = await countryResponse.json() as { borders?: string[] } | { borders?: string[] }[];
+            const alpha3Codes = (Array.isArray(countryResult) ? countryResult[0]?.borders : countryResult.borders) || [];
+            if (alpha3Codes.length) {
+              const neighborResponse = await fetch(`https://restcountries.com/v3.1/alpha?codes=${alpha3Codes.join(",")}&fields=cca2,cca3`);
+              if (neighborResponse.ok) {
+                const neighborData = await neighborResponse.json() as { cca2?: string }[];
+                nearbyCodes = neighborData.flatMap((item) => item.cca2 ? [item.cca2] : []);
+              }
+            }
+          }
+        } catch {
+          // Keep the built-in nearby-country suggestions if the borders catalog is unavailable.
+        }
+        const searches = [
+          ...(location.region ? [{ countryCode: location.countryCode, state: location.region, type: "local" as const }] : []),
+          { countryCode: location.countryCode, type: "local" as const },
+          ...nearbyCodes.slice(0, 3).map((countryCode) => ({ countryCode, type: "nearby" as const })),
+        ];
+        const results = await Promise.all(searches.map(async ({ countryCode, state, type }) => {
+          const search = new URLSearchParams({ countrycode: countryCode, hidebroken: "true", order: "votes", reverse: "true", limit: type === "local" ? "12" : "8" });
+          if (state) search.set("state", state);
+          const result = await fetch(`${radioApi}?${search}`);
+          if (!result.ok) return [];
+          const data = await result.json() as Omit<Station, "city">[];
+          return data.filter((station) => station.url_resolved?.startsWith("http")).map((station) => ({
+            ...station,
+            city: station.state || (type === "local" ? location.region || location.city : station.country) || location.countryName,
+            recommendationType: type,
+            recommendationCountryCode: countryCode,
+          }));
+        }));
+        const unique = new Map<string, Station>();
+        results.flat().forEach((station) => unique.set(station.stationuuid, station));
+        const allStations = [...unique.values()];
+        const nearbyLeaders = nearbyCodes.slice(0, 3)
+          .map((countryCode) => allStations.find((station) => station.recommendationType === "nearby" && station.recommendationCountryCode === countryCode))
+          .filter((station): station is Station => Boolean(station));
+        const nearbyIds = new Set(nearbyLeaders.map((station) => station.stationuuid));
+        setRecommendations([
+          ...allStations.filter((station) => station.recommendationType === "local"),
+          ...nearbyLeaders,
+          ...allStations.filter((station) => station.recommendationType === "nearby" && !nearbyIds.has(station.stationuuid)),
+        ]);
+        setLocationStatus("ready");
+      } catch {
+        setLocationError("No pudimos encontrar estaciones para tu ubicación. Intenta de nuevo.");
+        setLocationStatus("error");
+      }
+    }, () => {
+      setLocationError("No se pudo acceder a tu ubicación. Revisa el permiso del navegador o elige una ciudad.");
+      setLocationStatus("error");
+    }, { enableHighAccuracy: false, timeout: 12000, maximumAge: 300000 });
+  };
 
   useEffect(() => {
     if (!favoritesLoaded) return;
@@ -133,16 +232,17 @@ export default function HomePage() {
   const visibleStations = useMemo(() => {
     const normalizedQuery = normalize(query.trim());
     const selectedGenre = genres.find((item) => item.label === genre);
-    return stations.filter((station) => {
-      const matchesView = showFavorites
-        ? favorites.includes(station.stationuuid)
-        : station.city === city;
+    const catalog = showFavorites
+      ? [...new Map([...stations, ...recommendations].map((station) => [station.stationuuid, station] as const)).values()]
+      : stations;
+    return catalog.filter((station) => {
+      const matchesView = showFavorites ? favorites.includes(station.stationuuid) : station.city === city;
       const searchContent = normalize(`${station.name} ${station.tags || ""}`);
       const matchesQuery = !normalizedQuery || searchContent.includes(normalizedQuery);
       const matchesGenre = !selectedGenre?.terms.length || selectedGenre.terms.some((term) => searchContent.includes(normalize(term)));
       return matchesView && matchesQuery && matchesGenre;
     });
-  }, [city, favorites, genre, query, showFavorites, stations]);
+  }, [city, favorites, genre, query, recommendations, showFavorites, stations]);
 
   const pageCount = Math.max(1, Math.ceil(visibleStations.length / pageSize));
   const pageStations = visibleStations.slice((page - 1) * pageSize, page * pageSize);
@@ -191,12 +291,13 @@ export default function HomePage() {
   };
 
   const moveStation = (direction: -1 | 1) => {
-    if (visibleStations.length < 2) return;
-    const currentIndex = visibleStations.findIndex((station) => station.stationuuid === selected?.stationuuid);
+    const currentList = selected?.recommendationType ? recommendations : visibleStations;
+    if (currentList.length < 2) return;
+    const currentIndex = currentList.findIndex((station) => station.stationuuid === selected?.stationuuid);
     const nextIndex = currentIndex === -1
-      ? direction === 1 ? 0 : visibleStations.length - 1
-      : (currentIndex + direction + visibleStations.length) % visibleStations.length;
-    void playStation(visibleStations[nextIndex]);
+      ? direction === 1 ? 0 : currentList.length - 1
+      : (currentIndex + direction + currentList.length) % currentList.length;
+    void playStation(currentList[nextIndex]);
   };
 
   const toggleFavorite = (station: Station) => setFavorites((current) =>
@@ -229,6 +330,18 @@ export default function HomePage() {
         <header className="topbar"><div className="history-buttons"><button aria-label="Atrás" onClick={() => window.history.back()}><ArrowLeft size={18} /></button><button aria-label="Adelante" onClick={() => window.history.forward()}><ArrowRight size={18} /></button></div><div className="topbar-right"><span className="live-pill"><i /> RADIO EN VIVO</span><a className="github-link" href="https://github.com/marcelosg-dev/RadioProject" target="_blank" rel="noreferrer">Código abierto <ArrowRight size={13}/></a></div></header>
         <div className="content radio-content">
           <div className="greeting"><div><p className="eyebrow">RADIO LOCAL, SIN FRONTERAS</p><h1>Tu ciudad, <span>tu frecuencia.</span></h1><p className="greeting-sub">Sintoniza estaciones reales de México. Gratis y en vivo.</p></div><div className="greeting-art"><span className="art-orbit orbit-one"/><span className="art-orbit orbit-two"/><AudioLines size={39} /></div></div>
+          <section className="section-block location-recommendations" aria-labelledby="location-heading">
+            <div className="section-heading"><div><p className="eyebrow">FRECUENCIAS A TU ALREDEDOR</p><h2 id="location-heading">Recomendadas para ti</h2></div>{locationStatus !== "ready" && <button className="text-link location-detect" onClick={detectLocation} disabled={locationStatus === "detecting"}><MapPin size={14}/>{locationStatus === "detecting" ? "Detectando…" : "Detectar ubicación"}</button>}</div>
+            {userLocation && locationStatus === "ready" && <p className="location-result"><MapPin size={13}/>{[userLocation.city, userLocation.region, userLocation.countryName].filter(Boolean).join(" · ")}</p>}
+            {locationStatus === "idle" && <p className="location-help">Tu navegador pedirá permiso para sugerirte radios de tu zona.</p>}
+            {locationError && <div className="station-error" role="status">{locationError}</div>}
+            {locationStatus === "ready" && recommendations.length > 0 && <>
+              <p className="recommendation-label">TU PAÍS Y REGIÓN</p>
+              <div className="real-station-grid">{recommendations.filter((station) => station.recommendationType === "local").slice(0, 3).map((station, index) => <article className={`real-station ${selected?.stationuuid === station.stationuuid ? "selected" : ""}`} key={station.stationuuid} style={{ "--station-accent": accents[index % accents.length] } as CSSProperties}><button className="real-station-play" onClick={() => void playStation(station)} aria-label={`Escuchar ${station.name}`}>{selected?.stationuuid === station.stationuuid && playing ? <Pause size={17} fill="currentColor"/> : <Play size={17} fill="currentColor"/>}</button><div className="real-station-top"><span className="station-wave"><AudioLines size={19}/></span><button className={`station-favorite ${favorites.includes(station.stationuuid) ? "liked" : ""}`} onClick={() => toggleFavorite(station)} aria-label="Añadir a favoritas"><Heart size={17} fill={favorites.includes(station.stationuuid) ? "currentColor" : "none"}/></button></div><span className="real-station-city"><i/>{station.state || station.city}</span><h3>{station.name}</h3><p className="real-station-tags">{station.tags?.split(",").slice(0, 3).join(" · ") || "Radio en vivo"}</p><div className="real-station-meta"><span>{station.country || userLocation.countryName}</span><span>{station.votes} <Heart size={11}/></span></div></article>)}</div>
+              {recommendations.some((station) => station.recommendationType === "nearby") && <><p className="recommendation-label nearby-label">PAÍSES CERCANOS</p><div className="real-station-grid">{recommendations.filter((station) => station.recommendationType === "nearby").slice(0, 3).map((station, index) => <article className={`real-station ${selected?.stationuuid === station.stationuuid ? "selected" : ""}`} key={station.stationuuid} style={{ "--station-accent": accents[(index + 3) % accents.length] } as CSSProperties}><button className="real-station-play" onClick={() => void playStation(station)} aria-label={`Escuchar ${station.name}`}>{selected?.stationuuid === station.stationuuid && playing ? <Pause size={17} fill="currentColor"/> : <Play size={17} fill="currentColor"/>}</button><div className="real-station-top"><span className="station-wave"><AudioLines size={19}/></span><button className={`station-favorite ${favorites.includes(station.stationuuid) ? "liked" : ""}`} onClick={() => toggleFavorite(station)} aria-label="Añadir a favoritas"><Heart size={17} fill={favorites.includes(station.stationuuid) ? "currentColor" : "none"}/></button></div><span className="real-station-city"><i/>{station.country || station.city}</span><h3>{station.name}</h3><p className="real-station-tags">{station.tags?.split(",").slice(0, 3).join(" · ") || "Radio en vivo"}</p><div className="real-station-meta"><span>{station.state || "País cercano"}</span><span>{station.votes} <Heart size={11}/></span></div></article>)}</div></>}
+            </>}
+            {locationStatus === "ready" && recommendations.length === 0 && <div className="empty-stations"><Radio size={24}/><span>No encontramos estaciones para esta zona por ahora.</span></div>}
+          </section>
           <section className="section-block" id="estaciones">
             <div className="section-heading"><div><p className="eyebrow">{showFavorites ? "TU COLECCIÓN PERSONAL" : "DESCUBRE LO QUE SUENA"}</p><h2>{showFavorites ? "Mis estaciones favoritas" : "Estaciones cerca de ti"}</h2></div><span className="catalog-badge"><span/> CATÁLOGO ABIERTO</span></div>
             {!showFavorites && <div className="city-tabs" role="tablist" aria-label="Filtrar por ciudad">{cities.map((cityName, index) => <button key={cityName} role="tab" aria-selected={city === cityName} className={`city-tab ${city === cityName ? "active" : ""}`} onClick={() => { setCity(cityName); setQuery(""); }}><span className="city-tab-number">0{index + 1}</span><span>{cityName}</span><ChevronDown size={13}/></button>)}</div>}
